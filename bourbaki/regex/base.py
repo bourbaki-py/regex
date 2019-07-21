@@ -152,8 +152,8 @@ class Regex:
         return match
 
     def _depth_first_walk(self) -> Iterator['Regex']:
+        yield self
         for regex in self.subregexes:
-            yield regex
             yield from regex._depth_first_walk()
 
     def partial_regexes(self, debug: bool = False) -> Iterator['Regex']:
@@ -510,7 +510,7 @@ class Sequence(_Flattening):
     @property
     def len(self):
         len_ = 0
-        for l in map(len, self.regexes):
+        for l in map(operator.attrgetter('len'), self.regexes):
             if l is None:
                 return None
             len_ += l
@@ -530,7 +530,7 @@ class Alternation(_Flattening):
     @property
     def len(self):
         len_ = None
-        for l in map(len, self.regexes):
+        for l in map(operator.attrgetter('len'), self.regexes):
             if l is None:
                 return None
             if len_ is None:
@@ -583,6 +583,11 @@ class _SpecialRepeating(_WithOneSubRegex):
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         regex = regex or self
         return self._regex.pattern_for_quantification(regex) + self._repetition_symbol
+
+    @property
+    def len(self):
+        # these are all variable-length
+        return None
 
 
 class ZeroOrMore(_SpecialRepeating):

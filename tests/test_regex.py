@@ -4,7 +4,23 @@ import operator
 
 import pytest
 
+import bourbaki.regex.base as bre
 from bourbaki.regex import *
+
+@pytest.fixture
+def require_fixlen_lookbehinds():
+    old = bre.REQUIRE_FIX_LEN_LOOKBEHIND
+    bre.REQUIRE_FIX_LEN_LOOKBEHIND = True
+    yield True
+    bre.REQUIRE_FIX_LEN_LOOKBEHIND = old
+
+@pytest.fixture
+def atomic_group_support():
+    old = bre.ATOMIC_GROUP_SUPPORT
+    bre.ATOMIC_GROUP_SUPPORT = True
+    yield True
+    bre.ATOMIC_GROUP_SUPPORT = old
+
 
 # Basic character classes
 alpha = C['a':'z']
@@ -55,7 +71,7 @@ port = ('0' | posnum + num[:3] | C['1':'5'] + num[:4] |
         '6' + C['0':'4'] + num * 3 |
         '65' + C['0':'4'] + num * 2 |
         '655' + C['0':'2'] + num |
-        '6553' + C['0':'6'])
+        '6553' + C['0':'6']) // "a port"
 
 # user info + host + port = authority
 authority = ((userinfo("userinfo") + "@").optional
@@ -86,11 +102,11 @@ fragment = fragment_chars[:]
 
 # full uri
 uri = (START +
-       (scheme("scheme") + ":").optional
-       + (If("scheme").then_("//").else_("") + authority("authority")).optional
+       (scheme("scheme") + ":").optional // "scheme, i.e. 'http', 'ftp', etc"
+       + (If("scheme").then_("//").else_("") + authority("authority")).optional // "authority component of a URI"
        + (If("authority").then_(path_with_authority).else_(path_with_no_authority) + Literal('/').optional)("path")
-       + ("?" + query("query")).optional
-       + ("#" + fragment("fragment")).optional
+       + ("?" + query("query")).optional // "query component of a URI"
+       + ("#" + fragment("fragment")).optional // "fragment component of a URI"
        + END)
 
 wikipedia_examples = [
@@ -157,17 +173,74 @@ conditional_regex = foo_.optional + If(foo_).then_(bar).else_(baz)
 @pytest.mark.parametrize("s, match", [("foobar", True), ("baz", True), ("foo", False), ("bar", False)])
 def test_conditional_pattern(s, match, pattern=conditional_regex):
     if match:
-        assert pattern.match(s)
+        assert pattern.debug_match(s)
     else:
-        assert not pattern.match(s)
+        assert not pattern.debug_match(s)
+
+
+@pytest.mark.parametrize("pattern, len",
+                         [(foo, 3),
+                          (bar, 3),
+                          (alpha, 1),
+                          (num, 1),
+                          (percent_encoded, 3),
+                          (conditional_regex, None),
+                          (uri, None)])
+def test_pattern_len(pattern, len):
+    assert pattern.len == len
 
 
 @pytest.mark.parametrize("s, match", [("foobar", True), ("baz", True), ("foo", False), ("bar", False)])
 def test_negated_pattern(s, match, pattern=conditional_regex):
     if match:
-        assert not (~pattern).match(s)
+        assert not (~pattern).debug_match(s)
     else:
-        assert (~pattern).match(s)
+        assert (~pattern).debug_match(s)
+
+
+def test_repeated_name_error():
+    with pytest.raises(NameError):
+        pattern = L("foo")("foo") + L("bar")("foo")
+        pattern.validate()
+
+
+def test_out_of_bounds_backref_error():
+    with pytest.raises(IndexError):
+        pattern = foo() + If(2).then_(foo).else_(bar)
+        pattern.validate()
+
+
+def test_charclass_or_yields_charclass():
+    assert isinstance(alpha | num, CharClass)
+
+
+def test_charclass_ror():
+    assert isinstance(foo | alpha, Alternation)
+
+
+def test_variable_len_lookbehind_error(require_fixlen_lookbehinds):
+    p = (foo | alpha) << bar
+    assert isinstance(p, bre.Lookbehind)
+    assert not p.assertion_is_fixed_len()
+    with pytest.raises(ValueError):
+        p.validate()
+
+
+@pytest.mark.parametrize("pattern, len_",
+                         [(foo * 3, 9),
+                          (foo[:3], None),
+                          (foo[:4:2], None),
+                          ])
+def test_range_repeated_len(pattern, len_):
+    assert pattern.len == len_
+
+
+def test_atomic_with_support(atomic_group_support):
+    assert (+foo).pattern_in(None) == '(?>foo)'
+
+
+def test_atomic_without_support():
+    assert (+foo).pattern_in(None) == '(?=(foo))\\1'
 
 
 @pytest.mark.parametrize("o", map(str, chain(range(1, 2 ** 8, 11), [255])))
