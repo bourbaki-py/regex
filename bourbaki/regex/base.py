@@ -2,32 +2,40 @@ from typing import List, Dict, Optional, Iterator, Iterable, Union
 import itertools
 import functools
 import operator
+
 # change this to another module if you want to swap in another engine such as that provided by `regex`
 import re
 
 from .utils import utf_codepoint, to_char, escape_for_char_class, identity
-from .utils import validate_positive_int, validate_range_or_charset, validate_groupref, validate_repetition_args
+from .utils import (
+    validate_positive_int,
+    validate_range_or_charset,
+    validate_groupref,
+    validate_repetition_args,
+)
 from .utils import MAX_UNICODE_CODE_POINT, CHAR_CLASS_RESERVED_CHARS
 
 # change these if you want to swap in another engine such as that provided by `regex`
 REQUIRE_FIX_LEN_LOOKBEHIND = True
 ATOMIC_GROUP_SUPPORT = False
 
-Pattern = type(re.compile(''))
-Match = type(re.compile('').match(''))
+Pattern = type(re.compile(""))
+Match = type(re.compile("").match(""))
 
 
 class Regex:
     _require_group_for_quantification = True
 
-    def compile(self, flags: Optional[Union[int, re.RegexFlag]] = re.UNICODE) -> Pattern:
+    def compile(
+        self, flags: Optional[Union[int, re.RegexFlag]] = re.UNICODE
+    ) -> Pattern:
         self.validate()
         return re.compile(self.pattern, flags)
 
     @property
     def compiled(self):
         regex = self.compile()
-        self.__dict__['compiled'] = regex
+        self.__dict__["compiled"] = regex
         return regex
 
     def match(self, string: str) -> Optional[Match]:
@@ -87,15 +95,23 @@ class Regex:
 
     @property
     def capture_groups(self) -> Iterator['CaptureGroup']:
-        return (regex for regex in self._depth_first_walk() if isinstance(regex, CaptureGroup))
+        return (
+            regex
+            for regex in self._depth_first_walk()
+            if isinstance(regex, CaptureGroup)
+        )
 
     @property
     def named_groups(self) -> Iterator['NamedGroup']:
-        return (regex for regex in self._depth_first_walk() if isinstance(regex, NamedGroup))
+        return (
+            regex for regex in self._depth_first_walk() if isinstance(regex, NamedGroup)
+        )
 
     @property
     def backrefs(self) -> Iterator['_BackRef']:
-        return (regex for regex in self._depth_first_walk() if isinstance(regex, _BackRef))
+        return (
+            regex for regex in self._depth_first_walk() if isinstance(regex, _BackRef)
+        )
 
     def validate(self) -> 'Regex':
         """Check for:
@@ -111,21 +127,34 @@ class Regex:
             if isinstance(group, _BackRef):
                 if isinstance(group, _LiteralBackref):
                     if id(group.groupref) not in group_ids:
-                        raise IndexError("group {} is literal backref to a group that does not appear prior in pattern {}"
-                                         .format(repr(group), repr(self)))
+                        raise IndexError(
+                            "group {} is literal backref to a group that does not appear prior in pattern {}".format(
+                                repr(group), repr(self)
+                            )
+                        )
                 elif isinstance(group, NamedBackref):
                     if group.groupref not in named_groups:
-                        raise IndexError("group {} is named backref to group with name '{}' which doesn't appear "
-                                         "prior in pattern {}".format(group, group.groupref, repr(self)))
+                        raise IndexError(
+                            "group {} is named backref to group with name '{}' which doesn't appear "
+                            "prior in pattern {}".format(
+                                group, group.groupref, repr(self)
+                            )
+                        )
                 elif isinstance(group, IntBackref):
                     if group.groupref > last_group_index:
-                        raise IndexError("group {} is integer backref to group at index {} but only {} capture groups "
-                                         "appear prior in pattern {}".format(group, group.groupref,
-                                                                             last_group_index, repr(self)))
+                        raise IndexError(
+                            "group {} is integer backref to group at index {} but only {} capture groups "
+                            "appear prior in pattern {}".format(
+                                group, group.groupref, last_group_index, repr(self)
+                            )
+                        )
             elif isinstance(group, NamedGroup):
                 if group.name in named_groups:
-                    raise NameError("named group {} uses name '{}' which appears previously in pattern {}"
-                                    .format(group, group.name, repr(self)))
+                    raise NameError(
+                        "named group {} uses name '{}' which appears previously in pattern {}".format(
+                            group, group.name, repr(self)
+                        )
+                    )
                 group_ids[id(group)] = group
                 named_groups[group.name] = group
                 last_group_index += 1
@@ -136,7 +165,11 @@ class Regex:
                 numbered_groups[last_group_index] = group
             elif REQUIRE_FIX_LEN_LOOKBEHIND and isinstance(group, Lookbehind):
                 if not group.assertion_is_fixed_len(named_groups, numbered_groups):
-                    raise ValueError("lookbehind assertion in pattern '{}' is not fixed-length".format(group))
+                    raise ValueError(
+                        "lookbehind assertion in pattern '{}' is not fixed-length".format(
+                            group
+                        )
+                    )
 
         return self
 
@@ -147,8 +180,7 @@ class Regex:
             if print_failures and match is None:
                 print("FAIL: '{}'\n".format(regex))
             elif match:
-                print("MATCH IN '{}':\n"
-                      "    '{}'\n".format(regex, match.group()))
+                print("MATCH IN '{}':\n" "    '{}'\n".format(regex, match.group()))
         return match
 
     def _depth_first_walk(self) -> Iterator['Regex']:
@@ -293,7 +325,7 @@ class Comment(Regex):
             raise TypeError("comment must be a string; got {}".format(type(comment)))
         self.comment = comment
 
-    def partial_regexes(self, debug: bool=False):
+    def partial_regexes(self, debug: bool = False):
         if debug:
             print("COMMENT: {}\n".format(self.comment))
         yield from ()
@@ -340,9 +372,9 @@ class Lookahead(Regex):
         else:
             assertion, ahead = '=', self.ahead
 
-        return "{}(?{}{})".format(self._regex.pattern_in(regex),
-                                  assertion,
-                                  ahead.pattern_in(regex))
+        return "{}(?{}{})".format(
+            self._regex.pattern_in(regex), assertion, ahead.pattern_in(regex)
+        )
 
     @property
     def len(self):
@@ -359,7 +391,7 @@ class Lookbehind(Regex):
         yield from (self.behind, self._regex)
 
     def partial_regexes(self, debug: bool = False):
-        empty = Literal('')
+        empty = Literal("")
         for r in self.behind.partial_regexes(debug):
             yield Lookbehind(r, empty)
         for r in self._regex.partial_regexes(debug):
@@ -371,17 +403,20 @@ class Lookbehind(Regex):
             assertion, behind = '!', self.behind._regex
         else:
             assertion, behind = '=', self.behind
-        
-        return "(?<{}{}){}".format(assertion,
-                                   behind.pattern_in(regex),
-                                   self._regex.pattern_in(regex))
+
+        return "(?<{}{}){}".format(
+            assertion, behind.pattern_in(regex), self._regex.pattern_in(regex)
+        )
 
     @property
     def len(self):
         return self._regex.len
 
-    def assertion_is_fixed_len(self, named_groups: Optional[Dict[str, Regex]] = None,
-                               numbered_groups: Optional[Dict[int, Regex]] = None) -> bool:
+    def assertion_is_fixed_len(
+        self,
+        named_groups: Optional[Dict[str, Regex]] = None,
+        numbered_groups: Optional[Dict[int, Regex]] = None,
+    ) -> bool:
         len_ = self.behind.len
 
         if len_ is None:
@@ -414,13 +449,15 @@ def Atomic(regex: Regex) -> Regex:
     if ATOMIC_GROUP_SUPPORT:
         return _Atomic(regex)
     group = CaptureGroup(regex)
-    return Lookahead(Literal(''), group) + BackRef(group)
+    return Lookahead(Literal(""), group) + BackRef(group)
 
 
 class Literal(Regex):
     def __init__(self, string: str):
         if not isinstance(string, str):
-            raise TypeError("regex literals take only a string arg; got {}".format(type(string)))
+            raise TypeError(
+                "regex literals take only a string arg; got {}".format(type(string))
+            )
         self.string = string
 
     def partial_regexes(self, debug: bool = False):
@@ -454,7 +491,7 @@ class CaptureGroup(_WithOneSubRegex):
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         regex = regex or self
-        return '({})'.format(self._regex.pattern_in(regex))
+        return "({})".format(self._regex.pattern_in(regex))
 
 
 class NamedGroup(_WithOneSubRegex):
@@ -463,7 +500,9 @@ class NamedGroup(_WithOneSubRegex):
     def __init__(self, regex: Regex, name: str):
         self._regex = to_regex(regex)
         if not isinstance(name, str):
-            raise TypeError("named group references must be strings; got {}".format(type(name)))
+            raise TypeError(
+                "named group references must be strings; got {}".format(type(name))
+            )
         self.name = validate_groupref(name)
 
     def partial_regexes(self, debug: bool = False):
@@ -487,7 +526,9 @@ class _Flattening(Regex):
         return (to_regex(other),)
 
     def __init__(self, *regexes: Regex):
-        self.regexes = tuple(itertools.chain.from_iterable(map(self._to_regexes, regexes)))
+        self.regexes = tuple(
+            itertools.chain.from_iterable(map(self._to_regexes, regexes))
+        )
 
     @property
     def subregexes(self):
@@ -505,12 +546,12 @@ class _Flattening(Regex):
 class Sequence(_Flattening):
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         regex = regex or self
-        return ''.join(r.pattern_in(regex) for r in self.regexes)
+        return "".join(r.pattern_in(regex) for r in self.regexes)
 
     @property
     def len(self):
         len_ = 0
-        for l in map(operator.attrgetter('len'), self.regexes):
+        for l in map(operator.attrgetter("len"), self.regexes):
             if l is None:
                 return None
             len_ += l
@@ -525,12 +566,12 @@ class Alternation(_Flattening):
             template, regex = "{}", self
         else:
             template = "(?:{})"
-        return template.format('|'.join(r.pattern_in(regex) for r in self.regexes))
+        return template.format("|".join(r.pattern_in(regex) for r in self.regexes))
 
     @property
     def len(self):
         len_ = None
-        for l in map(operator.attrgetter('len'), self.regexes):
+        for l in map(operator.attrgetter("len"), self.regexes):
             if l is None:
                 return None
             if len_ is None:
@@ -539,10 +580,12 @@ class Alternation(_Flattening):
                 return None
 
 
-def RangeRepeated(regex: Regex,
-                  start: Optional[int] = None,
-                  stop: Optional[int] = None,
-                  step: Optional[int] = None) -> Regex:
+def RangeRepeated(
+    regex: Regex,
+    start: Optional[int] = None,
+    stop: Optional[int] = None,
+    step: Optional[int] = None,
+) -> Regex:
     start, stop, step = validate_repetition_args(start, stop, step)
     infinite = stop is None
     multiples = step != 1
@@ -606,7 +649,9 @@ class _RangeRepeating(_WithOneSubRegex):
     start = None
     stop = None
 
-    def __init__(self, regex: Regex, start: Optional[int] = None, stop: Optional[int] = None):
+    def __init__(
+        self, regex: Regex, start: Optional[int] = None, stop: Optional[int] = None
+    ):
         self._regex = to_regex(regex)
         self.start = start
         self.stop = stop
@@ -618,7 +663,7 @@ class _RangeRepeating(_WithOneSubRegex):
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         base = self._regex.pattern_for_quantification(regex)
-        return "{}{{{},{}}}".format(base, self.start or 0, self.stop or '')
+        return "{}{{{},{}}}".format(base, self.start or 0, self.stop or "")
 
     @property
     def len(self):
@@ -662,8 +707,8 @@ class Repeated(_WithOneSubRegex):
 
 
 class _CharSetOrRange(_AcceptableInCharClass):
-    def pattern_in(self, regex: Optional['Regex'] = None) -> str:
-        return '[{}]'.format(self.pattern_in_char_class)
+    def pattern_in(self, regex: Optional[Regex] = None) -> str:
+        return "[{}]".format(self.pattern_in_char_class)
 
 
 class CharSet(_CharSetOrRange):
@@ -696,7 +741,7 @@ class CharSet(_CharSetOrRange):
 
     @property
     def pattern_in_char_class(self):
-        return ''.join(map(escape_for_char_class, self))
+        return "".join(map(escape_for_char_class, self))
 
     def __iter__(self):
         return itertools.chain(self.special_chars, self.chars)
@@ -705,11 +750,17 @@ class CharSet(_CharSetOrRange):
         try:
             c = to_char(char)
         except ValueError:
-            raise ValueError("can only check for containment of single character in {}; got {}"
-                             .format(type(self), char))
+            raise ValueError(
+                "can only check for containment of single character in {}; got {}".format(
+                    type(self), char
+                )
+            )
         except TypeError:
-            raise TypeError("can only check for int or single character in {}; got {}"
-                            .format(type(self), type(char)))
+            raise TypeError(
+                "can only check for int or single character in {}; got {}".format(
+                    type(self), type(char)
+                )
+            )
         else:
             return c in self.chars or c in self.special_chars
 
@@ -718,25 +769,43 @@ class CharRange(_CharSetOrRange):
     def __init__(self, start, stop):
         start, stop = map(utf_codepoint, (start, stop))
         if start > stop:
-            raise ValueError("codepoint {} of start char {} is greater than codepoint {} of end char {}"
-                             .format(start, chr(start), stop, chr(stop)))
+            raise ValueError(
+                "codepoint {} of start char {} is greater than codepoint {} of end char {}".format(
+                    start, chr(start), stop, chr(stop)
+                )
+            )
         self.start = start
         self.stop = stop
 
     @property
     def pattern_in_char_class(self):
-        return '{}-{}'.format(escape_for_char_class(chr(self.start)), escape_for_char_class(chr(self.stop)))
+        return "{}-{}".format(
+            escape_for_char_class(chr(self.start)),
+            escape_for_char_class(chr(self.stop)),
+        )
 
     def __or__(self, other):
-        if isinstance(other, CharRange) and ((self.stop + 1) >= other.start) or ((other.stop + 1) >= self.start):
+        if (
+            isinstance(other, CharRange)
+            and ((self.stop + 1) >= other.start)
+            or ((other.stop + 1) >= self.start)
+        ):
             return CharRange(min(self.start, other.start), max(self.stop, other.stop))
-        if isinstance(other, Literal) and len(other.string) == 1 and other.string in self:
+        if (
+            isinstance(other, Literal)
+            and len(other.string) == 1
+            and other.string in self
+        ):
             return self
         return super().__or__(other)
 
     def __ror__(self, other):
         other = to_regex(other)
-        if isinstance(other, Literal) and len(other.string) == 1 and other.string in self:
+        if (
+            isinstance(other, Literal)
+            and len(other.string) == 1
+            and other.string in self
+        ):
             return self
         return super().__ror__(other)
 
@@ -762,11 +831,17 @@ class CharRange(_CharSetOrRange):
         try:
             o = utf_codepoint(char)
         except ValueError:
-            raise ValueError("can only check for containment of single character in {}; got {}"
-                             .format(type(self), char))
+            raise ValueError(
+                "can only check for containment of single character in {}; got {}".format(
+                    type(self), char
+                )
+            )
         except TypeError:
-            raise TypeError("can only check for int or single character in {}; got {}"
-                            .format(type(self), type(char)))
+            raise TypeError(
+                "can only check for int or single character in {}; got {}".format(
+                    type(self), type(char)
+                )
+            )
         else:
             return self.start <= o <= self.stop
 
@@ -778,9 +853,14 @@ class CharClassMixin:
         contents = [CharSet(c) if isinstance(c, (str, int)) else c for c in contents]
         bad = [c for c in contents if not isinstance(c, _AcceptableInCharClass)]
         if bad:
-            raise TypeError("only types {} are acceptable as arguments to CharClass; {} are not"
-                            .format(', '.join(c.__name__ for c in _AcceptableInCharClass.__subclasses__()),
-                                    tuple(bad)))
+            raise TypeError(
+                "only types {} are acceptable as arguments to CharClass; {} are not".format(
+                    ", ".join(
+                        c.__name__ for c in _AcceptableInCharClass.__subclasses__()
+                    ),
+                    tuple(bad),
+                )
+            )
 
         sets, ranges, charset = [], [], set()
         for chars in contents:
@@ -797,8 +877,10 @@ class CharClassMixin:
 
     def pattern_in(self, regex: Regex) -> str:
         template = "[^{}{}]" if self._negated else "[{}{}]"
-        return template.format(self.charset.pattern_in_char_class,
-                               ''.join(r.pattern_in_char_class for r in self.ranges))
+        return template.format(
+            self.charset.pattern_in_char_class,
+            "".join(r.pattern_in_char_class for r in self.ranges),
+        )
 
 
 class CharClass(CharClassMixin, _AcceptableInCharClass):
@@ -821,7 +903,9 @@ class CharClass(CharClassMixin, _AcceptableInCharClass):
 class NegatedCharClass(CharClassMixin, Regex):
     def __iter__(self):
         in_charclass = functools.partial(CharClass.__contains__, self)
-        yield from itertools.filterfalse(in_charclass, map(chr, range(0, MAX_UNICODE_CODE_POINT + 1)))
+        yield from itertools.filterfalse(
+            in_charclass, map(chr, range(0, MAX_UNICODE_CODE_POINT + 1))
+        )
 
     def __invert__(self):
         return CharClass(self.charset, *self.ranges)
@@ -868,8 +952,10 @@ class _LiteralBackref(_BackRef):
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         if regex is None:
-            raise TypeError("backreferences to literal Regex objects only have patterns in the context of a larger "
-                            "regex containing the groups they reference")
+            raise TypeError(
+                "backreferences to literal Regex objects only have patterns in the context of a larger "
+                "regex containing the groups they reference"
+            )
         return self.ref_cls(self.group_in(regex)).pattern
 
     @property
@@ -884,8 +970,11 @@ class LiteralUnnamedBackref(_LiteralBackref):
         for i, r in enumerate(regex.capture_groups, 1):
             if r is self.groupref:
                 return i
-        raise IndexError("the group {} is not present in the regex {} and thus is invalid as a backreference there"
-                         .format(repr(self.groupref), repr(regex)))
+        raise IndexError(
+            "the group {} is not present in the regex {} and thus is invalid as a backreference there".format(
+                repr(self.groupref), repr(regex)
+            )
+        )
 
 
 class LiteralNamedBackref(_LiteralBackref):
@@ -895,23 +984,33 @@ class LiteralNamedBackref(_LiteralBackref):
         for r in regex.named_groups:
             if r is self.groupref:
                 return r.name
-        raise IndexError("the group {} is not present in the regex {} and thus is invalid as a backreference there"
-                         .format(repr(self.groupref), repr(regex)))
+        raise IndexError(
+            "the group {} is not present in the regex {} and thus is invalid as a backreference there".format(
+                repr(self.groupref), repr(regex)
+            )
+        )
 
 
 class Conditional(_BackRef):
     _require_group_for_quantification = False
 
-    def __init__(self, capture_group_or_ref: Union[int, str, NamedGroup, _BackRef], then_: Regex, else_: Regex):
+    def __init__(
+        self,
+        capture_group_or_ref: Union[int, str, NamedGroup, _BackRef],
+        then_: Regex,
+        else_: Regex,
+    ):
         self.backref = BackRef(capture_group_or_ref)
         self.then_ = to_regex(then_)
         self.else_ = to_regex(else_)
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         regex = regex or self
-        return "(?({}){}|{})".format(self.backref.group_in(regex),
-                                     self.then_.pattern_in(regex),
-                                     self.else_.pattern_in(regex))
+        return "(?({}){}|{})".format(
+            self.backref.group_in(regex),
+            self.then_.pattern_in(regex),
+            self.else_.pattern_in(regex),
+        )
 
     @property
     def subregexes(self):
@@ -947,7 +1046,11 @@ class _Then:
 
 @functools.singledispatch
 def BackRef(capture_group_or_ref: Union[int, str, CaptureGroup]) -> _BackRef:
-    raise TypeError("can't form backreference to type {}, only capture groups".format(type(capture_group_or_ref)))
+    raise TypeError(
+        "can't form backreference to type {}, only capture groups".format(
+            type(capture_group_or_ref)
+        )
+    )
 
 
 BackRef.register(CaptureGroup)(LiteralUnnamedBackref)
@@ -1006,7 +1109,8 @@ L = Literal
 
 StartString, WordBoundary, WordInternal, EndString = map(_SpecialClass, "AbBZ")
 
-Digit, NonDigit, Whitespace, NonWhitespace, WordChar, NonWordChar, Tab, Endline, BackSpace, CarriageReturn = \
-    map(_SpecialClassAcceptableInCharClass, "dDsSwWtnbr")
+Digit, NonDigit, Whitespace, NonWhitespace, WordChar, NonWordChar, Tab, Endline, BackSpace, CarriageReturn = map(
+    _SpecialClassAcceptableInCharClass, "dDsSwWtnbr"
+)
 
-START, END, ANYCHAR = _SpecialSymbol('^'), _SpecialSymbol('$'), _SpecialSymbol('.')
+START, END, ANYCHAR = _SpecialSymbol("^"), _SpecialSymbol("$"), _SpecialSymbol(".")
