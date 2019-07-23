@@ -2,6 +2,7 @@ from typing import List, Dict, Optional, Iterator, Iterable, Union
 import itertools
 import functools
 import operator
+from warnings import warn
 
 # change this to another module if you want to swap in another engine such as that provided by `regex`
 import re
@@ -17,6 +18,7 @@ from .utils import MAX_UNICODE_CODE_POINT, CHAR_CLASS_RESERVED_CHARS
 
 # change these if you want to swap in another engine such as that provided by `regex`
 REQUIRE_FIX_LEN_LOOKBEHIND = True
+REQUIRE_UNIQUE_GROUP_NAMES = True
 ATOMIC_GROUP_SUPPORT = False
 
 Pattern = type(re.compile(""))
@@ -50,8 +52,17 @@ class Regex:
     def finditer(self, string: str) -> Iterable[Match]:
         return self.compiled.finditer(string)
 
-    def findall(self, string) -> List[str]:
+    def findall(self, string: str) -> List[str]:
         return self.compiled.findall(string)
+
+    def sub(self, repl: str, string: str, count: int) -> str:
+        return self.compiled.sub(repl, string, count)
+
+    def subn(self, repl: str, string: str, count: int):
+        return self.compiled.subn(repl, string, count)
+
+    def split(self, string: str, maxsplit: int) -> List[str]:
+        return self.compiled.split(string, maxsplit)
 
     @property
     def pattern(self) -> str:
@@ -150,11 +161,13 @@ class Regex:
                         )
             elif isinstance(group, NamedGroup):
                 if group.name in named_groups:
-                    raise NameError(
-                        "named group {} uses name '{}' which appears previously in pattern {}".format(
-                            group, group.name, repr(self)
-                        )
-                    )
+                    msg = ("named group {} uses name '{}' which appears previously in pattern {}"
+                           .format(group, group.name, repr(self)))
+                    if REQUIRE_UNIQUE_GROUP_NAMES:
+                        raise NameError(msg)
+                    else:
+                        warn(msg)
+
                 group_ids[id(group)] = group
                 named_groups[group.name] = group
                 last_group_index += 1
@@ -248,6 +261,10 @@ class Regex:
         if name is None:
             return CaptureGroup(self)
         return NamedGroup(self, name)
+
+    @property
+    def atomic(self) -> 'Regex':
+        return Atomic(self)
 
     @property
     def len(self) -> Optional[int]:

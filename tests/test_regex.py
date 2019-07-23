@@ -7,12 +7,14 @@ import pytest
 import bourbaki.regex.base as bre
 from bourbaki.regex import *
 
+
 @pytest.fixture
 def require_fixlen_lookbehinds():
     old = bre.REQUIRE_FIX_LEN_LOOKBEHIND
     bre.REQUIRE_FIX_LEN_LOOKBEHIND = True
     yield True
     bre.REQUIRE_FIX_LEN_LOOKBEHIND = old
+
 
 @pytest.fixture
 def atomic_group_support():
