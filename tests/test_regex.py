@@ -1,5 +1,5 @@
 from functools import reduce
-from itertools import chain
+from itertools import chain, repeat
 import operator
 
 import pytest
@@ -212,8 +212,18 @@ def test_out_of_bounds_backref_error():
         pattern.validate()
 
 
+@pytest.mark.parametrize("charclass, char", chain(zip(repeat(~C[Digit]), '0123456789'),
+                                                  zip(repeat(~C[WordChar]), 'abcdeFGHIJK')))
+def test_negated_charclass(charclass, char):
+    assert not charclass.match(char)
+
+
 def test_charclass_or_yields_charclass():
     assert isinstance(alpha | num, CharClass)
+
+
+def test_special_char_or_yields_charclass():
+    assert isinstance(Digit | Whitespace, CharClass)
 
 
 def test_charclass_ror():

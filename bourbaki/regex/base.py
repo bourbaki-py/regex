@@ -10,7 +10,7 @@ import re
 from .utils import utf_codepoint, to_char, escape_for_char_class, identity
 from .utils import (
     validate_positive_int,
-    validate_range_or_charset,
+    validate_range_arg,
     validate_groupref,
     validate_repetition_args,
 )
@@ -314,7 +314,7 @@ class _AcceptableInCharClass(Regex):
 
     def __ror__(self, other):
         other = to_regex(other)
-        if isinstance(other, Literal) and len(other.string) == 1:
+        if isinstance(other, _AcceptableInCharClass) or (isinstance(other, Literal) and len(other.string) == 1):
             return CharClass(self, other.string)
         return super().__ror__(other)
 
@@ -879,24 +879,28 @@ class CharClassMixin:
                 )
             )
 
-        sets, ranges, charset = [], [], set()
+        specials, ranges, charset = [], [], set()
         for chars in contents:
             if isinstance(chars, CharSet):
                 charset.update(chars)
             elif isinstance(chars, CharRange):
                 ranges.append(chars)
+            elif isinstance(chars, _SpecialClassAcceptableInCharClass):
+                specials.append(chars)
             elif isinstance(chars, CharClass):
                 charset.update(chars.charset)
+                specials.extend(chars.specials)
                 ranges.extend(chars.ranges)
 
         self.charset = CharSet(*charset)
+        self.specials = tuple(specials)
         self.ranges = tuple(sorted(ranges, key=operator.attrgetter("start")))
 
     def pattern_in(self, regex: Regex) -> str:
         template = "[^{}{}]" if self._negated else "[{}{}]"
         return template.format(
             self.charset.pattern_in_char_class,
-            "".join(r.pattern_in_char_class for r in self.ranges),
+            "".join(r.pattern_in_char_class for r in itertools.chain(self.specials, self.ranges)),
         )
 
 
@@ -918,6 +922,8 @@ class CharClass(CharClassMixin, _AcceptableInCharClass):
 
 
 class NegatedCharClass(CharClassMixin, Regex):
+    _negated = True
+
     def __iter__(self):
         in_charclass = functools.partial(CharClass.__contains__, self)
         yield from itertools.filterfalse(
@@ -1099,7 +1105,7 @@ to_regex.register(Regex)(identity)
 
 @functools.singledispatch
 def _to_charset(x):
-    pass
+    return x
 
 
 _to_charset.register(int)(CharSet)
@@ -1112,11 +1118,26 @@ def _to_char_range(start_stop):
     return CharRange(*start_stop)
 
 
+@functools.singledispatch
+def _validate_charclass_arg(arg):
+    raise ValueError("Arguments to C[...] must be str, int, slice or previously-constructed "
+                     "CharClass/CharSet/CharRange instances; got {}".format(type(arg)))
+
+
+_validate_charclass_arg.register(int)(identity)
+
+_validate_charclass_arg.register(str)(identity)
+
+_validate_charclass_arg.register(_AcceptableInCharClass)(identity)
+
+_validate_charclass_arg.register(slice)(validate_range_arg)
+
+
 class _CharClassConstructor:
     def __getitem__(self, item):
         if not isinstance(item, tuple):
             item = (item,)
-        args = map(validate_range_or_charset, item)
+        args = map(_validate_charclass_arg, item)
         return CharClass(*map(_to_charset, args))
 
 
