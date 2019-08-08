@@ -37,12 +37,6 @@ def validate_range_arg(item):
     return start, stop
 
 
-def validate_range_or_charset(item):
-    if isinstance(item, (str, int)):
-        return item
-    return validate_range_arg(item)
-
-
 def validate_groupref(groupref: Union[int, str]) -> Union[int, str]:
     if isinstance(groupref, int):
         if groupref <= 0:
