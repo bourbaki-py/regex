@@ -1,4 +1,5 @@
 from typing import List, Dict, Optional, Iterator, Iterable, Union
+from copy import copy
 import itertools
 import functools
 import operator
@@ -88,12 +89,12 @@ class Regex:
         return OneOrMore(self)
 
     def comment(self, comment: str):
-        return Comment(comment) + self
+        return self + Comment(comment)
 
     def pattern_in(self, regex: Optional['Regex'] = None) -> str:
         """Required for literal backreferences; they're the only classes that need to know their index/name
         in the containing regex. This method should in general recurse on subregexes"""
-        raise NotImplementedError()
+        raise NotImplementedError("pattern is not defined for instance {} of type {}".format(repr(self), type(self)))
 
     def pattern_for_quantification(self, regex: Optional['Regex'] = None):
         if self._require_group_for_quantification:
@@ -364,6 +365,11 @@ class _NegativeAssertion(_WithOneSubRegex):
 
     def __neg__(self):
         return self._regex
+
+    def comment(self, comment: str):
+        new = copy(self)
+        new._regex = self._regex.comment(comment)
+        return new
 
 
 def AnythingBut(regex: Regex):
