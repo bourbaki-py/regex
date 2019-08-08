@@ -293,13 +293,22 @@ class _SpecialClass(Regex):
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         return r"\{}".format(self.char)
 
+    @property
+    def len(self):
+        return 0
+
 
 class _SpecialSymbol(Regex):
-    def __init__(self, symbol: str):
+    def __init__(self, symbol: str, len_=0):
         self.symbol = symbol
+        self._len = len_
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         return self.symbol
+
+    @property
+    def len(self):
+        return self._len
 
 
 class _AcceptableInCharClass(Regex):
@@ -338,6 +347,10 @@ class _SpecialClassAcceptableInCharClass(_SpecialClass, _AcceptableInCharClass):
     @property
     def pattern_in_char_class(self):
         return self.pattern
+
+    @property
+    def len(self):
+        return 1
 
 
 class Comment(Regex):
@@ -1160,4 +1173,4 @@ Digit, NonDigit, Whitespace, NonWhitespace, WordChar, NonWordChar, Tab, Endline,
     _SpecialClassAcceptableInCharClass, "dDsSwWtnbr"
 )
 
-START, END, ANYCHAR = _SpecialSymbol("^"), _SpecialSymbol("$"), _SpecialSymbol(".")
+START, END, ANYCHAR = _SpecialSymbol("^", 0), _SpecialSymbol("$", 0), _SpecialSymbol(".", 1)

@@ -226,6 +226,21 @@ def test_special_char_or_yields_charclass():
     assert isinstance(Digit | Whitespace, CharClass)
 
 
+@pytest.mark.parametrize("charclass", [Digit, Whitespace, NonDigit, NonWhitespace, WordChar, NonWordChar])
+def test_special_char_class_len_1(charclass):
+    assert charclass.len == 1
+
+
+@pytest.mark.parametrize("symbol", [StartString, WordBoundary, WordInternal, EndString, START, END])
+def test_special_char_symbol_len_0(symbol):
+    assert symbol.len == 0
+
+
+@pytest.mark.parametrize("symbol", [ANYCHAR])
+def test_special_char_symbol_len_1(symbol):
+    assert symbol.len == 1
+
+
 @pytest.mark.parametrize("charclass", [Digit, NonDigit, Whitespace, NonWhitespace, WordChar, NonWordChar])
 def test_negated_special_char_class_pattern(charclass):
     assert str(~charclass) == r'[^\{}]'.format(charclass.char)
