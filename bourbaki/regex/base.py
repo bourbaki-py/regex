@@ -331,6 +331,9 @@ class _SpecialClassAcceptableInCharClass(_SpecialClass, _AcceptableInCharClass):
     # repeated def from second parent class in case of diamond problem
     __ror__ = _AcceptableInCharClass.__ror__
 
+    def __invert__(self):
+        return NegatedCharClass(self)
+
     @property
     def pattern_in_char_class(self):
         return self.pattern

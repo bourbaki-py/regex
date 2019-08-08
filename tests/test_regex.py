@@ -226,6 +226,11 @@ def test_special_char_or_yields_charclass():
     assert isinstance(Digit | Whitespace, CharClass)
 
 
+@pytest.mark.parametrize("charclass", [Digit, NonDigit, Whitespace, NonWhitespace, WordChar, NonWordChar])
+def test_negated_special_char_class_pattern(charclass):
+    assert str(~charclass) == r'[^\{}]'.format(charclass.char)
+
+
 def test_charclass_ror():
     assert isinstance(foo | alpha, Alternation)
 
