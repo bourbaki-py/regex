@@ -1,4 +1,4 @@
-from typing import List, Dict, Mapping, Callable, Iterator, Iterable, Optional, Union
+from typing import List, Dict, Mapping, Collection, Callable, Iterator, Iterable, Optional, Union
 from copy import copy
 import itertools
 import functools
@@ -8,14 +8,21 @@ from warnings import warn
 # change this to another module if you want to swap in another engine such as that provided by `regex`
 import re
 
-from .utils import utf_codepoint, to_char, escape_for_char_class, identity
+from .utils import utf_codepoint, to_char, escape_for_char_class, identity, to_rename_callable, to_regex_flag_chars
 from .utils import (
     validate_positive_int,
     validate_range_arg,
     validate_groupref,
     validate_repetition_args,
+    AnyRegexFlag,
+    AnyRegexFlags,
 )
-from .utils import MAX_UNICODE_CODE_POINT, CHAR_CLASS_RESERVED_CHARS
+from .utils import (
+    MAX_UNICODE_CODE_POINT, 
+    CHAR_CLASS_RESERVED_CHARS, 
+    REGEX_FLAG_CHAR_TO_REGEX_FLAG_NAME,
+    ALL_NON_NEGATABLE_REGEX_FLAG_CHARS,
+)
 
 # change these if you want to swap in another engine such as that provided by `regex`
 REQUIRE_FIX_LEN_LOOKBEHIND = True
@@ -87,6 +94,14 @@ class Regex:
     @property
     def one_or_more(self) -> 'RangeRepeated':
         return OneOrMore(self)
+
+    def with_options(self, *pos_flags: AnyRegexFlag) -> '_WithLocalFlags':
+        pos_flags = to_regex_flag_chars(pos_flags)
+        return _WithLocalFlags(self, pos_flags, None)
+
+    def without_options(self, *neg_flags: AnyRegexFlag) -> '_WithLocalFlags':
+        neg_flags = to_regex_flag_chars(neg_flags)
+        return _WithLocalFlags(self, None, neg_flags)
 
     def comment(self, comment: str):
         return self + Comment(comment)
@@ -249,6 +264,12 @@ class Regex:
     def __rlshift__(self, other: Union['Regex', str]) -> 'Lookbehind':
         return Lookbehind(other, self)
 
+    def __and__(self, other: AnyRegexFlags):
+        return self.with_options(other)
+
+    def __sub__(self, other: AnyRegexFlags):
+        return self.without_options(other)
+
     def __neg__(self) -> '_NegativeAssertion':
         return _NegativeAssertion(self)
 
@@ -380,6 +401,49 @@ class Comment(Regex):
         return 0
 
 
+class _WithLocalFlags(_WithOneSubRegex):
+    def __init__(
+        self, regex: Regex,
+        pos_flags: Optional[Collection[str]] = None,
+        neg_flags: Optional[Collection[str]] = None,
+    ):
+        pos_flags = set(pos_flags or ())
+        neg_flags = set(neg_flags or ())
+        bad_neg_flags = neg_flags.intersection(ALL_NON_NEGATABLE_REGEX_FLAG_CHARS)
+        if bad_neg_flags:
+            raise ValueError(
+                "can't negate regex flags {}; at least one must always be present. Apply one to negate the others"
+                .format([REGEX_FLAG_CHAR_TO_REGEX_FLAG_NAME[c] for c in bad_neg_flags])
+            )
+        mutually_exclusive_pos_flags = pos_flags.intersection(ALL_NON_NEGATABLE_REGEX_FLAG_CHARS)
+        if len(mutually_exclusive_pos_flags) > 1:
+            raise ValueError(
+                "can't simultaneously specify flags {}; they are mutually exclusive"
+                .format([REGEX_FLAG_CHAR_TO_REGEX_FLAG_NAME[c] for c in mutually_exclusive_pos_flags])
+            )
+        overlap = pos_flags.intersection(neg_flags)
+
+        self.pos_flags = frozenset(pos_flags).difference(overlap)
+        self.neg_flags = frozenset(neg_flags).difference(overlap)
+        self._regex = to_regex(regex)
+
+    @property
+    def pattern(self) -> str:
+        flag_str = (''.join(sorted(self.pos_flags)) + '-' + ''.join(sorted(self.neg_flags))).rstrip('-')
+        return "(?{}:{})".format(flag_str, self._regex.pattern)
+
+    def with_options(self, *pos_flags: AnyRegexFlag) -> '_WithLocalFlags':
+        pos_flags = to_regex_flag_chars(pos_flags)
+        return _WithLocalFlags(self._regex, self.pos_flags.union(pos_flags), self.neg_flags)
+
+    def without_options(self, *neg_flags: AnyRegexFlag) -> '_WithLocalFlags':
+        neg_flags = to_regex_flag_chars(neg_flags)
+        return _WithLocalFlags(self._regex, self.pos_flags, self.neg_flags.union(neg_flags))
+
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> '_WithLocalFlags':
+        return type(self)(self._regex.rename(renames), self.pos_flags, self.neg_flags)
+
+
 class _NegativeAssertion(_WithOneSubRegex):
     def __init__(self, regex: Regex):
         self._regex = regex
@@ -428,7 +492,7 @@ class Lookahead(Regex):
         return self._regex.len
 
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Lookahead':
-        rename = _to_rename_callable(renames)
+        rename = to_rename_callable(renames)
         return type(self)(self._regex.rename(rename), self.ahead.rename(rename))
 
 
@@ -484,7 +548,7 @@ class Lookbehind(Regex):
             return True
 
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Lookbehind':
-        rename = _to_rename_callable(renames)
+        rename = to_rename_callable(renames)
         return type(self)(self.behind.rename(rename), self._regex.rename(rename))
 
 
@@ -542,7 +606,7 @@ class _CachedRenamesMixin:
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'CaptureGroup':
         # there _might_ be some LiteralBackreference holding a reference to `self` and we want to be able to tell it
         # where the renamed `self` went to when `self` is renamed
-        rename = _to_rename_callable(renames)
+        rename = to_rename_callable(renames)
         renamed = self._rename_cache.get(rename)
         if renamed is None:
             renamed = self._rename(rename)
@@ -595,7 +659,7 @@ class NamedGroup(_CachedRenamesMixin, _WithOneSubRegex):
         return "(?P<{}>{})".format(self.name, self._regex.pattern_in(regex))
 
     def _rename(self, renames):
-        rename = _to_rename_callable(renames)
+        rename = to_rename_callable(renames)
         return type(self)(self._regex.rename(rename), rename(self.name))
 
 
@@ -626,7 +690,7 @@ class _Flattening(Regex):
             rs.append(r)
 
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> '_Flattening':
-        rename = _to_rename_callable(renames)
+        rename = to_rename_callable(renames)
         return type(self)(*(r.rename(rename) for r in self.regexes))
 
 
@@ -1032,7 +1096,7 @@ class NamedBackref(_BackRef):
         return self.groupref
 
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'NamedBackref':
-        rename = _to_rename_callable(renames)
+        rename = to_rename_callable(renames)
         return type(self)(rename(self.groupref))
 
 
@@ -1135,7 +1199,7 @@ class Conditional(Regex):
         return None
 
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Conditional':
-        rename = _to_rename_callable(renames)
+        rename = to_rename_callable(renames)
         renamed_ref = self.backref.rename(rename).groupref
         return type(self)(renamed_ref, self.then_.rename(rename), self.else_.rename(rename))
 
@@ -1221,30 +1285,6 @@ _validate_charclass_arg.register(str)(identity)
 _validate_charclass_arg.register(_AcceptableInCharClass)(identity)
 
 _validate_charclass_arg.register(slice)(validate_range_arg)
-
-
-def _to_rename_callable(renames: Union[Callable[[str], str], Mapping[str, str]]) -> Callable[[str], str]:
-    if callable(renames):
-        return renames
-    else:
-        return _Rename(renames)
-
-
-class _Rename:
-    def __init__(self, renames: Mapping[str, str]):
-        self.renames = dict(renames.items())
-        self._hash = None
-
-    def __call__(self, name: str) -> str:
-        return self.renames.get(name, name)
-
-    def __hash__(self):
-        if self._hash is None:
-            self._hash = hash(frozenset(self.renames.items()))
-        return self._hash
-
-    def __eq__(self, other):
-        return hash(self) == hash(other)
 
 
 class _CharClassConstructor:

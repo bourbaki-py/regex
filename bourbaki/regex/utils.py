@@ -1,9 +1,33 @@
-from typing import Union, Tuple, Optional
+from typing import List, Tuple, Mapping, Collection, Callable, Optional, Union
+from collections.abc import Collection as CollectionABC
 from functools import singledispatch
+import itertools
 import re
 
 MAX_UNICODE_CODE_POINT = int("10FFFF", 16)
 CHAR_CLASS_RESERVED_CHARS = ("-", "^", "\\", "]")
+
+ALL_REGEX_FLAG_CHARS = set('aiLmsux')
+ALL_NON_NEGATABLE_REGEX_FLAG_CHARS = set('aLu')
+ALL_NEGATABLE_REGEX_FLAG_CHARS = set('imsx')
+
+_regex_flag_to_regex_flag_char = {
+    re.ASCII: 'a',
+    re.IGNORECASE: 'i',
+    re.LOCALE: 'L',
+    re.MULTILINE: 'm',
+    re.DOTALL: 's',
+    re.UNICODE: 'u',
+    re.VERBOSE: 'x',
+}
+REGEX_FLAG_NAME_TO_REGEX_FLAG_CHAR = {
+    flag.name: char for flag, char in _regex_flag_to_regex_flag_char.items()
+}
+REGEX_FLAG_CHAR_TO_REGEX_FLAG_NAME = dict(map(reversed, REGEX_FLAG_NAME_TO_REGEX_FLAG_CHAR.items()))
+
+
+AnyRegexFlag = Union[re.RegexFlag, int, str]
+AnyRegexFlags = Union[AnyRegexFlag, Collection[AnyRegexFlag]]
 
 
 def validate_range_arg(item):
@@ -166,3 +190,70 @@ def utf_codepoint_str(x: str) -> int:
 
 def identity(x):
     return x
+
+
+def all_flag_values(flag: re.RegexFlag) -> List[re.RegexFlag]:
+    return list(filter(None, map(flag.__and__, re.RegexFlag)))
+
+
+@singledispatch
+def to_regex_flag_chars(flags: AnyRegexFlags) -> str:
+    raise TypeError("Can't interpret value of type {} as regex compilation flags".format(type(flags)))
+
+
+@to_regex_flag_chars.register(type(None))
+def _to_regex_flag_chars_none(flags: type(None)):
+    return ''
+
+
+@to_regex_flag_chars.register(re.RegexFlag)
+def _to_regex_flag_chars_regex_flag(flag: re.RegexFlag):
+    flags = all_flag_values(flag)
+    return ''.join(_regex_flag_to_regex_flag_char[f] for f in flags)
+
+
+@to_regex_flag_chars.register(str)
+def _to_regex_flag_chars_flag_name(name: str):
+    char = REGEX_FLAG_NAME_TO_REGEX_FLAG_CHAR.get(name.upper())
+    if char is None:
+        raise ValueError(
+            "can't interpret string {} as a valid inline regex flag - must be a valid regex flag name, for example "
+            "'UNICODE' or 'IGNORECASE' (see re.RegexFlag for more details)".format(repr(name))
+        )
+    return char
+
+
+# handling this case could be interpreted as support for writing unreadable code, except that some libraries such as
+# `regex` actually implement their flags as raw ints bound to global variable names
+@to_regex_flag_chars.register(int)
+def _to_regex_flag_chars_int(int_flag: int):
+    return _to_regex_flag_chars_regex_flag(re.RegexFlag(int_flag))
+
+
+@to_regex_flag_chars.register(CollectionABC)
+def _to_regex_flag_chars_collection(flag_collection: Collection[AnyRegexFlag]):
+    return ''.join(itertools.chain.from_iterable(map(to_regex_flag_chars, flag_collection)))
+
+
+def to_rename_callable(renames: Union[Callable[[str], str], Mapping[str, str]]) -> Callable[[str], str]:
+    if callable(renames):
+        return renames
+    else:
+        return _Rename(renames)
+
+
+class _Rename:
+    def __init__(self, renames: Mapping[str, str]):
+        self.renames = dict(renames.items())
+        self._hash = None
+
+    def __call__(self, name: str) -> str:
+        return self.renames.get(name, name)
+
+    def __hash__(self):
+        if self._hash is None:
+            self._hash = hash(frozenset(self.renames.items()))
+        return self._hash
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
