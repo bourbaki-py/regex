@@ -40,6 +40,12 @@ def test_rename_with_literal_backrefs(regex, rename):
     (foobar2, '((foo)(?(2)(bar)|))'),
     (foobarbaz2, '((foo)(?(2)(bar)|))(?(1)baz|)')
 ])
-def test_(regex, pattern):
+def test_drop_names_literal_backrefs(regex, pattern):
     unnamed = regex.drop_names()
     assert unnamed.pattern == pattern
+
+
+@pytest.mark.parametrize("regex", [foobar1, foobarbaz1])
+def test_drop_names_named_backrefs_raises(regex):
+    with pytest.raises(ValueError):
+        _ = regex.drop_names()
