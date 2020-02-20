@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Iterator, Iterable, Union
+from typing import List, Dict, Mapping, Callable, Iterator, Iterable, Optional, Union
 from copy import copy
 import itertools
 import functools
@@ -209,7 +209,7 @@ class Regex:
         return self.pattern
 
     def __getitem__(self, item: slice):
-        msg = "can only index Regex subclasses with a single integer slice; got {}"
+        msg = "can only index Regex instances with a single integer slice; got {}"
         if isinstance(item, tuple):
             if len(item) != 1:
                 raise IndexError(msg.format(repr(item)))
@@ -225,28 +225,28 @@ class Regex:
     def __floordiv__(self, comment: str) -> 'Sequence':
         return self.comment(comment)
 
-    def __add__(self, other: 'Regex') -> 'Sequence':
+    def __add__(self, other: Union['Regex', str]) -> 'Sequence':
         return Sequence(self, other)
 
-    def __radd__(self, other) -> 'Sequence':
+    def __radd__(self, other: Union['Regex', str]) -> 'Sequence':
         return Sequence(other, self)
 
-    def __or__(self, other: 'Regex') -> 'Alternation':
+    def __or__(self, other: Union['Regex', str]) -> 'Alternation':
         return Alternation(self, other)
 
-    def __ror__(self, other: 'Regex') -> 'Alternation':
+    def __ror__(self, other: Union['Regex', str]) -> 'Alternation':
         return Alternation(other, self)
 
-    def __rshift__(self, other: 'Regex') -> 'Lookahead':
+    def __rshift__(self, other: Union['Regex', str]) -> 'Lookahead':
         return Lookahead(self, other)
 
-    def __rrshift__(self, other: 'Regex') -> 'Lookahead':
+    def __rrshift__(self, other: Union['Regex', str]) -> 'Lookahead':
         return Lookahead(other, self)
 
-    def __lshift__(self, other: 'Regex') -> 'Lookbehind':
+    def __lshift__(self, other: Union['Regex', str]) -> 'Lookbehind':
         return Lookbehind(self, other)
 
-    def __rlshift__(self, other: 'Regex') -> 'Lookbehind':
+    def __rlshift__(self, other: Union['Regex', str]) -> 'Lookbehind':
         return Lookbehind(other, self)
 
     def __neg__(self) -> '_NegativeAssertion':
@@ -271,6 +271,11 @@ class Regex:
     def len(self) -> Optional[int]:
         return None
 
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Regex':
+        """Rename named groups with either a mapping from current name to new name or a callable accepting
+        current names and returning new names"""
+        return self
+
 
 class _WithOneSubRegex(Regex):
     _regex = None
@@ -282,6 +287,9 @@ class _WithOneSubRegex(Regex):
     @property
     def len(self):
         return self._regex.len
+
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> '_WithOneSubRegex':
+        return type(self)(self._regex.rename(renames))
 
 
 class _SpecialClass(Regex):
@@ -419,6 +427,10 @@ class Lookahead(Regex):
     def len(self):
         return self._regex.len
 
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Lookahead':
+        rename = _to_rename_callable(renames)
+        return type(self)(self._regex.rename(rename), self.ahead.rename(rename))
+
 
 class Lookbehind(Regex):
     def __init__(self, behind: Regex, regex: Regex):
@@ -471,6 +483,10 @@ class Lookbehind(Regex):
         else:
             return True
 
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Lookbehind':
+        rename = _to_rename_callable(renames)
+        return type(self)(self.behind.rename(rename), self._regex.rename(rename))
+
 
 class _Atomic(_WithOneSubRegex):
     def __init__(self, regex: Regex):
@@ -516,10 +532,33 @@ class Literal(Regex):
         return len(self.string)
 
 
-class CaptureGroup(_WithOneSubRegex):
+class _CachedRenamesMixin:
+    def __init__(self):
+        self._rename_cache = {}
+
+    def _rename(self, renames):
+        raise NotImplementedError()
+
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'CaptureGroup':
+        # there _might_ be some LiteralBackreference holding a reference to `self` and we want to be able to tell it
+        # where the renamed `self` went to when `self` is renamed
+        rename = _to_rename_callable(renames)
+        renamed = self._rename_cache.get(rename)
+        if renamed is None:
+            renamed = self._rename(rename)
+            self._rename_cache[rename] = renamed
+
+        return renamed
+
+
+class CaptureGroup(_CachedRenamesMixin, _WithOneSubRegex):
     _require_group_for_quantification = False
 
+    def _rename(self, renames):
+        return _WithOneSubRegex.rename(self, renames)
+
     def __init__(self, regex: Regex):
+        super().__init__()
         self._regex = to_regex(regex)
 
     def partial_regexes(self, debug: bool = False):
@@ -533,10 +572,11 @@ class CaptureGroup(_WithOneSubRegex):
         return "({})".format(self._regex.pattern_in(regex))
 
 
-class NamedGroup(_WithOneSubRegex):
+class NamedGroup(_CachedRenamesMixin, _WithOneSubRegex):
     _require_group_for_quantification = False
 
     def __init__(self, regex: Regex, name: str):
+        super().__init__()
         self._regex = to_regex(regex)
         if not isinstance(name, str):
             raise TypeError(
@@ -554,20 +594,24 @@ class NamedGroup(_WithOneSubRegex):
         regex = regex or self
         return "(?P<{}>{})".format(self.name, self._regex.pattern_in(regex))
 
+    def _rename(self, renames):
+        rename = _to_rename_callable(renames)
+        return type(self)(self._regex.rename(rename), rename(self.name))
+
 
 class _Flattening(Regex):
     regexes = ()
+
+    def __init__(self, *regexes: Regex):
+        self.regexes = tuple(
+            itertools.chain.from_iterable(map(self._to_regexes, regexes))
+        )
 
     @classmethod
     def _to_regexes(cls, other):
         if isinstance(other, cls):
             return other.regexes
         return (to_regex(other),)
-
-    def __init__(self, *regexes: Regex):
-        self.regexes = tuple(
-            itertools.chain.from_iterable(map(self._to_regexes, regexes))
-        )
 
     @property
     def subregexes(self):
@@ -580,6 +624,10 @@ class _Flattening(Regex):
             for s in r.partial_regexes(debug):
                 yield cls(*rs, s)
             rs.append(r)
+
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> '_Flattening':
+        rename = _to_rename_callable(renames)
+        return type(self)(*(r.rename(rename) for r in self.regexes))
 
 
 class Sequence(_Flattening):
@@ -713,6 +761,9 @@ class _RangeRepeating(_WithOneSubRegex):
             return self.start * len_
         return None
 
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> '_RangeRepeating':
+        return type(self)(self._regex.rename(renames), self.start, self.stop)
+
 
 class Repeated(_WithOneSubRegex):
     def __init__(self, regex: Regex, n: int):
@@ -743,6 +794,9 @@ class Repeated(_WithOneSubRegex):
         if len_ is None:
             return None
         return len_ * self.n
+
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Repeated':
+        return type(self)(self._regex.rename(renames), self.n)
 
 
 class _CharSetOrRange(_AcceptableInCharClass):
@@ -977,6 +1031,10 @@ class NamedBackref(_BackRef):
     def group_in(self, regex: Regex) -> str:
         return self.groupref
 
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'NamedBackref':
+        rename = _to_rename_callable(renames)
+        return type(self)(rename(self.groupref))
+
 
 class IntBackref(_BackRef):
     def __init__(self, groupref: int):
@@ -1007,6 +1065,11 @@ class _LiteralBackref(_BackRef):
     def len(self):
         return self.groupref.len
 
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> '_LiteralBackref':
+        # the rename call on groupref is cached - when it is called elsewhere by another referencing liter backref or
+        # by the groupref itself, with the same renames it will return the same literal renamed regex object
+        return type(self)(self.groupref.rename(renames))
+
 
 class LiteralUnnamedBackref(_LiteralBackref):
     ref_cls = IntBackref
@@ -1036,7 +1099,7 @@ class LiteralNamedBackref(_LiteralBackref):
         )
 
 
-class Conditional(_BackRef):
+class Conditional(Regex):
     _require_group_for_quantification = False
 
     def __init__(
@@ -1070,6 +1133,11 @@ class Conditional(_BackRef):
         if thenlen == elselen:
             return thenlen
         return None
+
+    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Conditional':
+        rename = _to_rename_callable(renames)
+        renamed_ref = self.backref.rename(rename).groupref
+        return type(self)(renamed_ref, self.then_.rename(rename), self.else_.rename(rename))
 
 
 class If:
@@ -1153,6 +1221,30 @@ _validate_charclass_arg.register(str)(identity)
 _validate_charclass_arg.register(_AcceptableInCharClass)(identity)
 
 _validate_charclass_arg.register(slice)(validate_range_arg)
+
+
+def _to_rename_callable(renames: Union[Callable[[str], str], Mapping[str, str]]) -> Callable[[str], str]:
+    if callable(renames):
+        return renames
+    else:
+        return _Rename(renames)
+
+
+class _Rename:
+    def __init__(self, renames: Mapping[str, str]):
+        self.renames = dict(renames.items())
+        self._hash = None
+
+    def __call__(self, name: str) -> str:
+        return self.renames.get(name, name)
+
+    def __hash__(self):
+        if self._hash is None:
+            self._hash = hash(frozenset(self.renames.items()))
+        return self._hash
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
 
 
 class _CharClassConstructor:
