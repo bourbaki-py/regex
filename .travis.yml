@@ -1,0 +1,17 @@
+language: python
+python:
+- '3.6'
+- '3.7'
+- '3.8'
+install:
+- python setup.py install
+script:
+- python setup.py test
+deploy:
+  provider: pypi
+  user: __token__
+  password:
+    secure: cU35js/dkLtk1fdywKJK5VH9zLh+e2BNmFUPo9p1LVvX7SYuhnXsQZHXlu56VFaWk/vxPGw9gIMkiIGBWleL5XTqy/NssXhWXfDGbKQtr1CrnkXiUCaFSay3kp1pzlxVFy5CzVwW2RXeEx4qQhvWxUdBqg/OIX1lchnHp48wjOejYy24COBvYRtaYh/b8aFDtrVfwrqr7dy3P3UwoEFKVkgucAvk03G7QKDg3pHf0d1oYub+gDdRIwF6uLp6gI0vzrOc4L3uPAonbYs61vaLvKWJA7adk9tOuLj2jzKEWblcGnGPjQ3UDX/YV8ChW8Um48SpVxRpnSPxqM2YLGExPklFG7VzobGzSKOOp27p7KVjdqz02h9fG0v3GTJt4rJsm0nS6rkhXHBUZK/Zd4f2OppV4GparDhMR2kqoyiwdgjVza3pnmJOzVfmCfi32CN6Vqc1YfELfGzY9UjhkXaqZbt/7dgo3YzVozGKoDbtZfw4xOVG+q60R9qBEB8YdRTF/pSD4UZy9UXke7DjasejKsZcN5xQ2JTX32QSyFR48UGMNCqbZ9tg3AVmD7xLO7OaHIUJyCwVtcaQHAp84bYEDmAUEP+ayG4+/cCk1HAxiPXamPbSQ154J9wvaKe5lCqF1BAELFJNJjpKVnkd/Hp4rgCH/u71a9b4zLDxEYQSqYw=
+  on:
+    branch: master
+    tags: true
