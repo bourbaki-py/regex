@@ -1,7 +1,7 @@
-# Regular expressions made readable
-
 [![Coverage Status](https://coveralls.io/repos/github/bourbaki-py/regex/badge.svg?branch=master)](https://coveralls.io/github/bourbaki-py/regex?branch=master)
 [![Build Status](https://travis-ci.org/bourbaki-py/regex.svg?branch=master)](https://travis-ci.org/bourbaki-py/regex)
+
+# Regular expressions made readable
 
 ## Introduction
 
