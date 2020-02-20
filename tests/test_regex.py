@@ -103,13 +103,15 @@ fragment_chars = alphanum_any | path_query_fragment_chars | query_fragment_chars
 fragment = fragment_chars[:]
 
 # full uri
-uri = (START +
-       (scheme("scheme") + ":").optional // "scheme, i.e. 'http', 'ftp', etc"
-       + (If("scheme").then_("//").else_("") + authority("authority")).optional // "authority component of a URI"
-       + (If("authority").then_(path_with_authority).else_(path_with_no_authority) + Literal('/').optional)("path")
-       + ("?" + query("query")).optional // "query component of a URI"
-       + ("#" + fragment("fragment")).optional // "fragment component of a URI"
-       + END)
+uri = (
+    START +
+    (scheme("scheme") + ":").optional // "scheme, i.e. 'http', 'ftp', etc"
+    + (If("scheme").then_("//").else_("") + authority("authority")).optional // "authority component of a URI"
+    + (If("authority").then_(path_with_authority).else_(path_with_no_authority) + Literal('/').optional)("path")
+    + ("?" + query("query")).optional // "query component of a URI"
+    + ("#" + fragment("fragment")).optional // "fragment component of a URI"
+    + END
+)
 
 wikipedia_examples = [
     "https://john.doe@www.example.com:123/forum/questions/?tag=networking&order=newest#top",

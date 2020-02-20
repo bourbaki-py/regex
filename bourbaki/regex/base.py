@@ -16,6 +16,7 @@ from .utils import (
     validate_repetition_args,
     AnyRegexFlag,
     AnyRegexFlags,
+    RenameFunc,
 )
 from .utils import (
     MAX_UNICODE_CODE_POINT, 
@@ -23,6 +24,7 @@ from .utils import (
     REGEX_FLAG_CHAR_TO_REGEX_FLAG_NAME,
     ALL_NON_NEGATABLE_REGEX_FLAG_CHARS,
 )
+
 
 # change these if you want to swap in another engine such as that provided by `regex`
 REQUIRE_FIX_LEN_LOOKBEHIND = True
@@ -49,61 +51,89 @@ class Regex:
         return regex
 
     def match(self, string: str) -> Optional[Match]:
+        """see `re.match`"""
         return self.compiled.match(string)
 
     def search(self, string: str) -> Optional[Match]:
+        """see `re.search`"""
         return self.compiled.search(string)
 
     def fullmatch(self, string: str) -> Optional[Match]:
+        """see `re.fullmatch`"""
         return self.compiled.fullmatch(string)
 
     def finditer(self, string: str) -> Iterable[Match]:
+        """see `re.finditer`"""
         return self.compiled.finditer(string)
 
     def findall(self, string: str) -> List[str]:
+        """see `re.findall`"""
         return self.compiled.findall(string)
 
-    def sub(self, repl: str, string: str, count: int) -> str:
+    def sub(self, repl: str, string: str, count: int = 0) -> str:
+        """see `re.sub`"""
         return self.compiled.sub(repl, string, count)
 
     def subn(self, repl: str, string: str, count: int):
+        """see `re.subn`"""
         return self.compiled.subn(repl, string, count)
 
     def split(self, string: str, maxsplit: int) -> List[str]:
+        """see `re.split`"""
         return self.compiled.split(string, maxsplit)
 
     @property
     def pattern(self) -> str:
+        """The string literal pattern for this regex"""
         return self.pattern_in(None)
 
     def as_(self, name: Optional[str]) -> 'CaptureGroup':
+        """Return a named group containing this regex with the given name"""
         return NamedGroup(self, name)
+
+    def rename(self, renames: Union[RenameFunc, Mapping[str, str]]) -> 'Regex':
+        """Rename named groups with either a mapping from current name to new name or a callable accepting
+        current names and returning new names. If either mapping lookup fails to find the current name, it
+        is left as-is. If the lookup values contain None or the callable returns None, the corresponding named
+        groups will be converted into unnamed capture groups (int-indexed)"""
+        return self
+
+    def drop_names(self):
+        """Return a regex with all named capture groups converted to unnamed capture groups"""
+        return self.rename(lambda name: None)
 
     @property
     def captured(self) -> 'CaptureGroup':
+        """Return a capture group containing this regex"""
         return CaptureGroup(self)
 
     @property
     def optional(self) -> 'RangeRepeated':
+        """Return a regex matching this one zero or one times"""
         return ZeroOrOne(self)
 
     @property
     def zero_or_more(self) -> 'RangeRepeated':
+        """Return a regex matching this one zero or more times"""
         return ZeroOrMore(self)
 
     @property
     def one_or_more(self) -> 'RangeRepeated':
+        """Return a regex matching this one one or more times"""
         return OneOrMore(self)
 
     def with_options(self, *pos_flags: AnyRegexFlag) -> '_WithLocalFlags':
+        """Return a copy of this regex with the given compile flags locally activated"""
         pos_flags = to_regex_flag_chars(pos_flags)
         return _WithLocalFlags(self, pos_flags, None)
 
     def without_options(self, *neg_flags: AnyRegexFlag) -> '_WithLocalFlags':
+        """Return a copy of this regex with the given compile flags locally deactivated"""
         neg_flags = to_regex_flag_chars(neg_flags)
         return _WithLocalFlags(self, None, neg_flags)
 
     def comment(self, comment: str):
+        """Return this regex with an added comment at the end"""
         return self + Comment(comment)
 
     def pattern_in(self, regex: Optional['Regex'] = None) -> str:
@@ -118,24 +148,28 @@ class Regex:
 
     @property
     def subregexes(self) -> Iterator['Regex']:
+        """Iterate over all sub-regexes contained in this one"""
         yield from ()
 
     @property
     def capture_groups(self) -> Iterator['CaptureGroup']:
+        """Iterate over all capture groups contained in this one (named and unnamed)"""
         return (
             regex
             for regex in self._depth_first_walk()
-            if isinstance(regex, CaptureGroup)
+            if isinstance(regex, (CaptureGroup, NamedGroup))
         )
 
     @property
     def named_groups(self) -> Iterator['NamedGroup']:
+        """Iterate over all named capture groups contained in this one"""
         return (
             regex for regex in self._depth_first_walk() if isinstance(regex, NamedGroup)
         )
 
     @property
     def backrefs(self) -> Iterator['_BackRef']:
+        """Iterate over all back-references to previous groups contained in this regex"""
         return (
             regex for regex in self._depth_first_walk() if isinstance(regex, _BackRef)
         )
@@ -291,11 +325,6 @@ class Regex:
     @property
     def len(self) -> Optional[int]:
         return None
-
-    def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Regex':
-        """Rename named groups with either a mapping from current name to new name or a callable accepting
-        current names and returning new names"""
-        return self
 
 
 class _WithOneSubRegex(Regex):
@@ -596,7 +625,7 @@ class Literal(Regex):
         return len(self.string)
 
 
-class _CachedRenamesMixin:
+class _CaptureGroupMixin:
     def __init__(self):
         self._rename_cache = {}
 
@@ -615,7 +644,7 @@ class _CachedRenamesMixin:
         return renamed
 
 
-class CaptureGroup(_CachedRenamesMixin, _WithOneSubRegex):
+class CaptureGroup(_CaptureGroupMixin, _WithOneSubRegex):
     _require_group_for_quantification = False
 
     def _rename(self, renames):
@@ -636,7 +665,7 @@ class CaptureGroup(_CachedRenamesMixin, _WithOneSubRegex):
         return "({})".format(self._regex.pattern_in(regex))
 
 
-class NamedGroup(_CachedRenamesMixin, _WithOneSubRegex):
+class NamedGroup(_CaptureGroupMixin, _WithOneSubRegex):
     _require_group_for_quantification = False
 
     def __init__(self, regex: Regex, name: str):
@@ -660,7 +689,10 @@ class NamedGroup(_CachedRenamesMixin, _WithOneSubRegex):
 
     def _rename(self, renames):
         rename = to_rename_callable(renames)
-        return type(self)(self._regex.rename(rename), rename(self.name))
+        new_name = rename(self.name)
+        if new_name is None:
+            return CaptureGroup(self._regex.rename(rename))
+        return type(self)(self._regex.rename(rename), new_name)
 
 
 class _Flattening(Regex):
@@ -1097,7 +1129,12 @@ class NamedBackref(_BackRef):
 
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'NamedBackref':
         rename = to_rename_callable(renames)
-        return type(self)(rename(self.groupref))
+        new_name = rename(self.groupref)
+        if new_name is None:
+            raise ValueError(
+                "Can't drop name of group {}; there are named backreferences to it!".format(repr(self.groupref)),
+            )
+        return type(self)(new_name)
 
 
 class IntBackref(_BackRef):
@@ -1168,32 +1205,32 @@ class Conditional(Regex):
 
     def __init__(
         self,
-        capture_group_or_ref: Union[int, str, NamedGroup, _BackRef],
+        if_: Union[int, str, NamedGroup, CaptureGroup, _BackRef],
         then_: Regex,
-        else_: Regex,
+        else_: Regex = Literal(''),
     ):
-        self.backref = BackRef(capture_group_or_ref)
-        self.then_ = to_regex(then_)
-        self.else_ = to_regex(else_)
+        self.backref = BackRef(if_)
+        self._then = to_regex(then_)
+        self._else = to_regex(else_)
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         regex = regex or self
         return "(?({}){}|{})".format(
             self.backref.group_in(regex),
-            self.then_.pattern_in(regex),
-            self.else_.pattern_in(regex),
+            self._then.pattern_in(regex),
+            self._else.pattern_in(regex),
         )
 
     @property
     def subregexes(self):
-        yield from (self.backref, self.then_, self.else_)
+        yield from (self.backref, self._then, self._else)
 
     @property
     def len(self):
-        thenlen = self.then_.len
+        thenlen = self._then.len
         if thenlen is None:
             return None
-        elselen = self.else_.len
+        elselen = self._else.len
         if thenlen == elselen:
             return thenlen
         return None
@@ -1201,7 +1238,7 @@ class Conditional(Regex):
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Conditional':
         rename = to_rename_callable(renames)
         renamed_ref = self.backref.rename(rename).groupref
-        return type(self)(renamed_ref, self.then_.rename(rename), self.else_.rename(rename))
+        return type(self)(renamed_ref, self._then.rename(rename), self._else.rename(rename))
 
 
 class If:
@@ -1209,16 +1246,12 @@ class If:
         self.ref = groupref
 
     def then_(self, regex: Regex) -> '_Then':
-        return _Then(self, regex)
+        return _Then(self.ref, regex)
 
 
-class _Then:
-    def __init__(self, if_: If, regex: Regex):
-        self.groupref = if_.ref
-        self.regex = regex
-
-    def else_(self, regex: Regex) -> Conditional:
-        return Conditional(self.groupref, self.regex, regex)
+class _Then(Conditional):
+    def else_(self, else_: Regex) -> Conditional:
+        return Conditional(self.backref, self._then, else_)
 
 
 @functools.singledispatch
@@ -1237,6 +1270,8 @@ BackRef.register(NamedGroup)(LiteralNamedBackref)
 BackRef.register(int)(IntBackref)
 
 BackRef.register(str)(NamedBackref)
+
+BackRef.register(_BackRef)(identity)
 
 
 @functools.singledispatch

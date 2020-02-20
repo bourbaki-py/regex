@@ -28,6 +28,7 @@ REGEX_FLAG_CHAR_TO_REGEX_FLAG_NAME = dict(map(reversed, REGEX_FLAG_NAME_TO_REGEX
 
 AnyRegexFlag = Union[re.RegexFlag, int, str]
 AnyRegexFlags = Union[AnyRegexFlag, Collection[AnyRegexFlag]]
+RenameFunc = Callable[[str], Optional[str]]
 
 
 def validate_range_arg(item):
@@ -70,7 +71,7 @@ def validate_groupref(groupref: Union[int, str]) -> Union[int, str]:
     elif isinstance(groupref, str):
         if not groupref.isidentifier():
             raise ValueError(
-                "string group references muse be valid identifiers; got {}".format(
+                "string group references must be valid identifiers; got {}".format(
                     repr(groupref)
                 )
             )
@@ -235,7 +236,7 @@ def _to_regex_flag_chars_collection(flag_collection: Collection[AnyRegexFlag]):
     return ''.join(itertools.chain.from_iterable(map(to_regex_flag_chars, flag_collection)))
 
 
-def to_rename_callable(renames: Union[Callable[[str], str], Mapping[str, str]]) -> Callable[[str], str]:
+def to_rename_callable(renames: Union[RenameFunc, Mapping[str, str]]) -> RenameFunc:
     if callable(renames):
         return renames
     else:
