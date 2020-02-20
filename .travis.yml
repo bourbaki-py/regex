@@ -6,6 +6,7 @@ python:
 install:
 - python setup.py install
 script:
+- rm -rf .pytest_cache/
 - python setup.py test
 deploy:
   provider: pypi
