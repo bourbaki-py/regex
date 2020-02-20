@@ -11,7 +11,7 @@ foobarbaz1 = foobar1 + If("foobar").then_('baz').else_('')
 
 # literal backrefs
 foobar2 = (foo + If(foo).then_(bar).else_('')).as_("foobar")
-foobar2named = foobar2 + If(foobar2).then_('baz').else_('')
+foobarbaz2 = foobar2 + If(foobar2).then_('baz').else_('')
 
 
 rename_dict = dict(foo='food', bar='barn')
@@ -37,8 +37,8 @@ def test_rename_with_literal_backrefs(regex, rename):
 
 
 @pytest.mark.parametrize("regex,pattern", [
-    (foobar2, '((foo)(?(2)bar|))'),
-    foobar2named,
+    (foobar2, '((foo)(?(2)(bar)|))'),
+    (foobarbaz2, '((foo)(?(2)(bar)|))(?(1)baz|)')
 ])
 def test_(regex, pattern):
     unnamed = regex.drop_names()

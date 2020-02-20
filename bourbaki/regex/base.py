@@ -25,6 +25,7 @@ from .utils import (
     ALL_NON_NEGATABLE_REGEX_FLAG_CHARS,
 )
 
+
 # change these if you want to swap in another engine such as that provided by `regex`
 REQUIRE_FIX_LEN_LOOKBEHIND = True
 REQUIRE_UNIQUE_GROUP_NAMES = True
@@ -690,7 +691,7 @@ class NamedGroup(_CaptureGroupMixin, _WithOneSubRegex):
         rename = to_rename_callable(renames)
         new_name = rename(self.name)
         if new_name is None:
-            return CaptureGroup(self._regex)
+            return CaptureGroup(self._regex.rename(rename))
         return type(self)(self._regex.rename(rename), new_name)
 
 
@@ -1209,27 +1210,27 @@ class Conditional(Regex):
         else_: Regex = Literal(''),
     ):
         self.backref = BackRef(if_)
-        self.then_ = to_regex(then_)
-        self.else_ = to_regex(else_)
+        self._then = to_regex(then_)
+        self._else = to_regex(else_)
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         regex = regex or self
         return "(?({}){}|{})".format(
             self.backref.group_in(regex),
-            self.then_.pattern_in(regex),
-            self.else_.pattern_in(regex),
+            self._then.pattern_in(regex),
+            self._else.pattern_in(regex),
         )
 
     @property
     def subregexes(self):
-        yield from (self.backref, self.then_, self.else_)
+        yield from (self.backref, self._then, self._else)
 
     @property
     def len(self):
-        thenlen = self.then_.len
+        thenlen = self._then.len
         if thenlen is None:
             return None
-        elselen = self.else_.len
+        elselen = self._else.len
         if thenlen == elselen:
             return thenlen
         return None
@@ -1237,7 +1238,7 @@ class Conditional(Regex):
     def rename(self, renames: Union[Callable[[str], str], Mapping[str, str]]) -> 'Conditional':
         rename = to_rename_callable(renames)
         renamed_ref = self.backref.rename(rename).groupref
-        return type(self)(renamed_ref, self.then_.rename(rename), self.else_.rename(rename))
+        return type(self)(renamed_ref, self._then.rename(rename), self._else.rename(rename))
 
 
 class If:
@@ -1245,15 +1246,12 @@ class If:
         self.ref = groupref
 
     def then_(self, regex: Regex) -> '_Then':
-        return _Then(self, regex)
+        return _Then(self.ref, regex)
 
 
 class _Then(Conditional):
-    def __init__(self, if_: If, then_: Regex):
-        super().__init__(if_.ref, then_)
-
     def else_(self, else_: Regex) -> Conditional:
-        return Conditional(self.backref, self.then_, else_)
+        return Conditional(self.backref, self._then, else_)
 
 
 @functools.singledispatch
@@ -1272,6 +1270,8 @@ BackRef.register(NamedGroup)(LiteralNamedBackref)
 BackRef.register(int)(IntBackref)
 
 BackRef.register(str)(NamedBackref)
+
+BackRef.register(_BackRef)(identity)
 
 
 @functools.singledispatch
