@@ -130,7 +130,32 @@ The `.as_` method and `.captured` attribute may also be used for this purpose.
   - `C['0':'9'].captured` is as above, but the group isn't named. It will get a number in the resulting compiled
     pattern, and will be accessible by calling `.groups()` on any match object.
     This is equivalent to `C['0':'9']()`, using the function call syntax.
-  
+
+Regexes and all of their named capture groups may be renamed in one call with the `.rename` method:
+
+```python
+> regex = (Literal("foo").as_("foo") + literal("bar").as_("bar")).as_("foobar")
+> regex.pattern
+'(?P<foobar>(?P<baz>foo)(?P<bar>bar))'
+> # rename the group foo to baz and drop the global capture group name foobar
+> regex.rename({'foo': 'baz', 'foobar': None}).pattern
+'((?P<baz>foo)(?P<bar>bar))'
+```
+
+You may also use callables for renaming:
+
+```python
+> regex.rename(lambda name: 'foobarbaz' if name == 'foobar' else None).pattern
+'(?P<foobarbaz>(foo)(bar))'
+```
+
+And all named capture groups may be converted to unnamed capture groups with `.drop_names`:
+
+```python
+> regex.drop_names().pattern
+'((foo)(bar))'
+```
+
   
 #### Lookahead and Lookbehind assertions
   

@@ -23,7 +23,7 @@ def rename_func(name):
 
 @pytest.mark.parametrize('regex', [foo, bar])
 @pytest.mark.parametrize("rename", [rename_dict, rename_ordereddict, rename_func])
-def test_renames_are_cached(regex, rename):
+def test_capture_group_renames_are_cached(regex, rename):
     renamed1, renamed2 = regex.rename(rename), regex.rename(rename)
     assert renamed1 is renamed2
 
@@ -34,3 +34,12 @@ def test_rename_with_literal_backrefs(regex, rename):
     assert regex.pattern == '(?P<foobar>(?P<foo>foo)(?(foo)(?P<bar>bar)|))'
     renamed = regex.rename(rename)
     assert renamed.pattern == '(?P<foobar>(?P<food>foo)(?(food)(?P<barn>bar)|))'
+
+
+@pytest.mark.parametrize("regex,pattern", [
+    (foobar2, '((foo)(?(2)bar|))'),
+    foobar2named,
+])
+def test_(regex, pattern):
+    unnamed = regex.drop_names()
+    assert unnamed.pattern == pattern
