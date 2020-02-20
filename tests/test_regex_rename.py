@@ -1,6 +1,6 @@
 from collections import OrderedDict
 import pytest
-from bourbaki.regex import L, C, If
+from bourbaki.regex import L, If
 
 foo = L("foo").as_("foo")
 bar = L("bar").as_("bar")
