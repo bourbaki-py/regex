@@ -248,6 +248,15 @@ def test_negated_special_char_class_pattern(charclass):
     assert str(~charclass) == r'[^\{}]'.format(charclass.char)
 
 
+@pytest.mark.parametrize("char", list(".(["))
+def test_single_char_special_char_literal(char):
+    r = Literal(char)
+    assert str(r) == "\\" + char
+    assert str(r[2:]) == "\\" + char + "{2,}"
+    assert not r.match("a")
+    assert r.match(char)
+
+
 def test_charclass_ror():
     assert isinstance(foo | alpha, Alternation)
 
