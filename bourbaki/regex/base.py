@@ -617,7 +617,7 @@ class Literal(Regex):
 
     def pattern_for_quantification(self, regex: Optional['Regex'] = None):
         if len(self.string) == 1:
-            return self.string
+            return re.escape(self.string)
         return super().pattern_for_quantification(regex)
 
     @property
