@@ -132,6 +132,30 @@ class Regex:
         neg_flags = to_regex_flag_chars(neg_flags)
         return _WithLocalFlags(self, None, neg_flags)
 
+    @property
+    def ignorecase(self):
+        return self.with_options(re.IGNORECASE)
+
+    @property
+    def ascii(self):
+        return self.with_options(re.ASCII)
+
+    @property
+    def unicode(self):
+        return self.with_options(re.UNICODE)
+
+    @property
+    def locale(self):
+        return self.with_options(re.LOCALE)
+
+    @property
+    def dotall(self):
+        return self.with_options(re.DOTALL)
+
+    @property
+    def multiline(self):
+        return self.with_options(re.MULTILINE)
+
     def comment(self, comment: str):
         """Return this regex with an added comment at the end"""
         return self + Comment(comment)
@@ -357,6 +381,8 @@ class _SpecialClass(Regex):
 
 
 class _SpecialSymbol(Regex):
+    _require_group_for_quantification = False
+
     def __init__(self, symbol: str, len_=0):
         self.symbol = symbol
         self._len = len_
@@ -456,10 +482,20 @@ class _WithLocalFlags(_WithOneSubRegex):
         self.neg_flags = frozenset(neg_flags).difference(overlap)
         self._regex = to_regex(regex)
 
+    def partial_regexes(self, debug: bool = False) -> Iterator['Regex']:
+        if debug:
+            print("LOCAL FLAGS: {}".format(self.flag_str))
+        return (_WithLocalFlags(r, self.pos_flags, self.neg_flags) for r in self._regex.partial_regexes(debug))
+
     @property
-    def pattern(self) -> str:
-        flag_str = (''.join(sorted(self.pos_flags)) + '-' + ''.join(sorted(self.neg_flags))).rstrip('-')
-        return "(?{}:{})".format(flag_str, self._regex.pattern)
+    def flag_str(self):
+        return (''.join(sorted(self.pos_flags)) + '-' + ''.join(sorted(self.neg_flags))).rstrip('-')
+
+    def pattern_in(self, regex: Optional['Regex'] = None) -> str:
+        if not self.pos_flags and not self.neg_flags:
+            return self._regex.pattern_in(regex)
+
+        return "(?{}:{})".format(self.flag_str, self._regex.pattern_in(regex))
 
     def with_options(self, *pos_flags: AnyRegexFlag) -> '_WithLocalFlags':
         pos_flags = to_regex_flag_chars(pos_flags)
