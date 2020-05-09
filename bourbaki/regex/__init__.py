@@ -9,6 +9,7 @@ from .base import (
     Literal,
     If,
     Alternation,
+    BackRef,
     START,
     END,
     ANYCHAR,
