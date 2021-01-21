@@ -173,6 +173,14 @@ The `-` _unary_ operator (negation) is used to express a _negative assertion_.
   - `-L("foo") << "bar"` will match `"bar"`, but only if _not_ preceded by `"foo"`.
   
   
+Note:
+Python's standard library regex engine does not support variable-length lookbehind assertions. 
+If you attempt to use a pattern which matches variable-length strings as a lookbehind assertion, you will get a useful error.
+To use `regex` or another conforming to python's `re` module API, but supporting variable length lookbehind 
+assertions, simply `import bourbaki.regex.base as bre`, and set 
+`bre.REQUIRE_FIX_LEN_LOOKBEHIND = False; bre.re = <your preferred regex module>`.
+
+
 #### Comments in compiled patterns
 
 The `//` operator may take a raw string on the right which serves as a comment.
@@ -181,14 +189,6 @@ compiled pattern.
 
   - `L("foo") // "foo, the usual placeholder name"` compiles to the pattern 
     `"(?#foo, the usual placeholder name)foo"`
-
-
-Note:
-Python's standard library regex engine does not support variable-length lookbehind assertions. 
-If you attempt to use a pattern which matches variable-length strings as a lookbehind assertion, you will get a useful error.
-To use `regex` or another conforming to python's `re` module API, but supporting variable length lookbehind 
-assertions, simply `import bourbaki.regex.base as bre`, and set 
-`bre.REQUIRE_FIX_LEN_LOOKBEHIND = False; bre.re = <your preferred regex module>`.
 
 
 #### Atomic groups
