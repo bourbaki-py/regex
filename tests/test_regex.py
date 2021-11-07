@@ -24,6 +24,10 @@ def atomic_group_support():
     bre.ATOMIC_GROUP_SUPPORT = old
 
 
+html_tag = L("<") + ANYCHAR.one_or_more + ">"
+html_tag_nongreedy = L("<") + ANYCHAR.one_or_more.nongreedy + ">"
+
+
 # Basic character classes
 alpha = C['a':'z']
 alpha_any = alpha | C['A':'Z']
@@ -294,3 +298,11 @@ def test_octet_pattern(o):
 @pytest.mark.parametrize("uri,parse", zip(wikipedia_examples, parses))
 def test_uri_parse(uri, parse):
     validate_uri_parse(uri, parse)
+
+
+@pytest.mark.parametrize("pattern, s, match", [
+    (html_tag, "<foo>bar<foo>", "<foo>bar<foo>"),
+    (html_tag_nongreedy, "<foo>bar<foo>", "<foo>"),
+])
+def test_nongreedy(pattern, s, match):
+    assert pattern.match(s).group() == match
