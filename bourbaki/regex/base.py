@@ -330,6 +330,9 @@ class Regex:
 class _WithOneSubRegex(Regex):
     _regex = None
 
+    def __init__(self, regex: Regex):
+        self._regex = to_regex(regex)
+
     @property
     def subregexes(self):
         yield self._regex
@@ -362,6 +365,9 @@ class _SpecialSymbol(Regex):
         self._len = len_
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
+        return self.symbol
+
+    def pattern_for_quantification(self, regex: Optional['Regex'] = None):
         return self.symbol
 
     @property
@@ -433,8 +439,8 @@ class Comment(Regex):
 class _WithLocalFlags(_WithOneSubRegex):
     def __init__(
         self, regex: Regex,
-        pos_flags: Optional[Collection[str]] = None,
-        neg_flags: Optional[Collection[str]] = None,
+        pos_flags: Optional[Union[str, Collection[str]]] = None,
+        neg_flags: Optional[Union[str, Collection[str]]] = None,
     ):
         pos_flags = set(pos_flags or ())
         neg_flags = set(neg_flags or ())
@@ -454,7 +460,7 @@ class _WithLocalFlags(_WithOneSubRegex):
 
         self.pos_flags = frozenset(pos_flags).difference(overlap)
         self.neg_flags = frozenset(neg_flags).difference(overlap)
-        self._regex = to_regex(regex)
+        super().__init__(regex)
 
     @property
     def pattern(self) -> str:
@@ -474,9 +480,6 @@ class _WithLocalFlags(_WithOneSubRegex):
 
 
 class _NegativeAssertion(_WithOneSubRegex):
-    def __init__(self, regex: Regex):
-        self._regex = regex
-
     def __neg__(self):
         return self._regex
 
@@ -582,9 +585,6 @@ class Lookbehind(Regex):
 
 
 class _Atomic(_WithOneSubRegex):
-    def __init__(self, regex: Regex):
-        self._regex = regex
-
     def pattern_in(self, regex: Optional['Regex'] = None):
         regex = regex or self
         return "(?>{})".format(self._regex.pattern_in(regex))
@@ -625,9 +625,10 @@ class Literal(Regex):
         return len(self.string)
 
 
-class _CaptureGroupMixin:
-    def __init__(self):
+class _CaptureGroupMixin(_WithOneSubRegex):
+    def __init__(self, regex: Regex):
         self._rename_cache = {}
+        super().__init__(regex)
 
     def _rename(self, renames):
         raise NotImplementedError()
@@ -644,15 +645,11 @@ class _CaptureGroupMixin:
         return renamed
 
 
-class CaptureGroup(_CaptureGroupMixin, _WithOneSubRegex):
+class CaptureGroup(_CaptureGroupMixin):
     _require_group_for_quantification = False
 
     def _rename(self, renames):
         return _WithOneSubRegex.rename(self, renames)
-
-    def __init__(self, regex: Regex):
-        super().__init__()
-        self._regex = to_regex(regex)
 
     def partial_regexes(self, debug: bool = False):
         if debug:
@@ -665,17 +662,16 @@ class CaptureGroup(_CaptureGroupMixin, _WithOneSubRegex):
         return "({})".format(self._regex.pattern_in(regex))
 
 
-class NamedGroup(_CaptureGroupMixin, _WithOneSubRegex):
+class NamedGroup(_CaptureGroupMixin):
     _require_group_for_quantification = False
 
     def __init__(self, regex: Regex, name: str):
-        super().__init__()
-        self._regex = to_regex(regex)
         if not isinstance(name, str):
             raise TypeError(
                 "named group references must be strings; got {}".format(type(name))
             )
         self.name = validate_groupref(name)
+        super().__init__(regex)
 
     def partial_regexes(self, debug: bool = False):
         if debug:
@@ -799,8 +795,21 @@ def RangeRepeated(
 class _SpecialRepeating(_WithOneSubRegex):
     _repetition_symbol = None
 
-    def __init__(self, regex: Regex):
-        self._regex = to_regex(regex)
+    def __init__(self, regex: Regex, greedy: bool = True):
+        self._greedy = greedy
+        super().__init__(regex)
+
+    @property
+    def nongreedy(self):
+        return type(self)(self._regex, False)
+
+    minimal = nongreedy
+
+    @property
+    def greedy(self):
+        return type(self)(self._regex, True)
+
+    maximal = greedy
 
     def partial_regexes(self, debug: bool = False):
         yield from self._regex.partial_regexes(debug)
@@ -808,7 +817,9 @@ class _SpecialRepeating(_WithOneSubRegex):
 
     def pattern_in(self, regex: Optional[Regex] = None) -> str:
         regex = regex or self
-        return self._regex.pattern_for_quantification(regex) + self._repetition_symbol
+        # repetitions are greedy by default
+        repetition_symbol = self._repetition_symbol if self._greedy else self._repetition_symbol + "?"
+        return self._regex.pattern_for_quantification(regex) + repetition_symbol
 
     @property
     def len(self):
@@ -835,9 +846,9 @@ class _RangeRepeating(_WithOneSubRegex):
     def __init__(
         self, regex: Regex, start: Optional[int] = None, stop: Optional[int] = None
     ):
-        self._regex = to_regex(regex)
         self.start = start
         self.stop = stop
+        super().__init__(regex)
 
     def partial_regexes(self, debug: bool = False):
         if self.start not in (0, None):
@@ -864,7 +875,7 @@ class _RangeRepeating(_WithOneSubRegex):
 class Repeated(_WithOneSubRegex):
     def __init__(self, regex: Regex, n: int):
         self.n = validate_positive_int(n, "fixed repetition counts")
-        self._regex = to_regex(regex)
+        super().__init__(regex)
 
     def partial_regexes(self, debug: bool = False):
         rs = list(self._regex.partial_regexes(debug))[:-1]
@@ -1035,7 +1046,7 @@ class CharRange(_CharSetOrRange):
             return self.start <= o <= self.stop
 
 
-class CharClassMixin:
+class CharClassBase(Regex):
     _negated = False
 
     def __init__(self, *contents):
@@ -1076,7 +1087,7 @@ class CharClassMixin:
         )
 
 
-class CharClass(CharClassMixin, _AcceptableInCharClass):
+class CharClass(CharClassBase, _AcceptableInCharClass):
     def __iter__(self):
         memo = set(self.charset)
         yield from sorted(self.charset)
@@ -1093,7 +1104,7 @@ class CharClass(CharClassMixin, _AcceptableInCharClass):
         return char in self.charset or any(char in r for r in self.ranges)
 
 
-class NegatedCharClass(CharClassMixin, Regex):
+class NegatedCharClass(CharClassBase, Regex):
     _negated = True
 
     def __iter__(self):
